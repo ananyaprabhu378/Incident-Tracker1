@@ -1,0 +1,41 @@
+type User @table {
+  email: String!
+  displayName: String!
+  createdAt: Timestamp!
+  role: String!
+  phoneNumber: String
+  photoUrl: String
+}
+
+type Incident @table {
+  title: String!
+  description: String!
+  status: String!
+  severity: String!
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+  reporter: User
+  assignee: User
+  resolutionNotes: String
+  dueBy: Timestamp
+}
+
+type Category @table {
+  name: String!
+  createdAt: Timestamp!
+  description: String
+}
+
+type IncidentCategory @table(key: ["incident", "category"]) {
+  incident: Incident!
+  category: Category!
+  createdAt: Timestamp!
+}
+
+type Comment @table {
+  text: String!
+  createdAt: Timestamp!
+  incident: Incident
+  user: User
+  attachmentUrl: String
+}

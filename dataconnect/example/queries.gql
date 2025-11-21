@@ -1,0 +1,41 @@
+mutation CreateNewIncident($title: String!, $description: String!, $severity: String!, $status: String!, $reporterId: UUID!) @auth(level: USER) {
+  incident_insert(data: {
+    title: $title,
+    description: $description,
+    severity: $severity,
+    status: $status,
+    reporterId: $reporterId,
+    createdAt_expr: "request.time",
+    updatedAt_expr: "request.time"
+  })
+}
+
+query ListIncidentsForUser @auth(level: USER) {
+  incidents(where: {reporterId: {eq_expr: "auth.uid"}}) {
+    id
+    title
+    description
+    severity
+    status
+    createdAt
+    updatedAt
+  }
+}
+
+mutation UpdateIncidentStatus($id: UUID!, $status: String!) @auth(level: USER) {
+  incident_update(
+    key: {id: $id},
+    data: {
+      status: $status,
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+query ListPublicCategories @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  categories {
+    id
+    name
+    description
+  }
+}

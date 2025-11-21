@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check for admin role (assuming you have a 'roles' field on the user document)
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check for technician role
+    function isTech() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'technician';
+    }
+
+    // --- User Profile Access (Required for role checks) ---
+    match /users/{userId} {
+      // Allow any authenticated user to read their own profile
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Allow admins to read all user profiles (for assignment/monitoring)
+      allow read: if isAdmin();
+      // Allow creation of user profile upon registration (only if user ID matches)
+      allow create: if request.auth.uid == userId;
+      // Disallow general updates to roles/profiles by non-admins
+      allow update, delete: if isAdmin();
+    }
+
+    // --- Incidents Collection ---
+    match /incidents/{incidentId} {
+      // Everyone must be authenticated to interact with incidents
+      allow read, write: if request.auth != null;
+
+      // Creation (Reporter/Student Role):
+      allow create: if 
+        request.auth != null &&
+        request.resource.data.reporterUid == request.auth.uid && // Must report their own ID
+        request.resource.data.duplicateOf == null; // Disallow writing confirmed duplicates
+
+      // Read Access:
+      allow read: if 
+        isAdmin() || // Admins can read all
+        request.resource.data.reporterUid == request.auth.uid || // Reporter can read their own incident
+        request.resource.data.assignedTechId == request.auth.uid; // Assigned tech can read
+
+      // Update Access (Status & Assignment):
+      allow update: if 
+        isAdmin() || // Admins can update anything
+        (isTech() && request.resource.data.assignedTechId == request.auth.uid && // Assigned Tech can only update status
+         request.resource.data.keys().hasOnly(['status', 'updatedAt', 'resolvedAt'])); 
+
+      // Disallow deletion generally
+      allow delete: if false; 
+    }
+
+    // --- Notifications/Alerts Collection (Read by Frontend) ---
+    match /notifications/{notificationId} {
+        // Allow only authenticated users to read their notifications
+        allow read: if request.auth != null && resource.data.targetUid == request.auth.uid;
+        // Creation is done by the backend (Person C's prediction/alert function)
+        allow create: if false; 
+    }
+  }
+}

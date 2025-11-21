@@ -1,0 +1,80 @@
+mutation CreateDemoData @transaction @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users.") {
+  user_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      displayName: "demouser1",
+      email: "demouser1@example.com",
+      role: "admin",
+      createdAt: "2024-01-01T00:00:00Z"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      displayName: "demouser2",
+      email: "demouser2@example.com",
+      role: "member",
+      createdAt: "2024-01-01T00:00:00Z"
+    }
+  ])
+  category_insertMany(data: [
+    {
+      id: "a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5",
+      name: "Hardware Failure",
+      createdAt: "2024-01-01T00:00:00Z"
+    },
+    {
+      id: "b6b6b6b6-c7c7-d8d8-e9e9-f0f0f0f0f0f0",
+      name: "Network Outage",
+      createdAt: "2024-01-01T00:00:00Z"
+    }
+  ])
+  incident_insertMany(data: [
+    {
+      id: "c2c2c2c2-d3d3-e4e4-f5f5-a6a6a6a6a6a6",
+      title: "Server Overload",
+      description: "High CPU usage detected on server.",
+      severity: "critical",
+      status: "open",
+      createdAt: "2024-01-05T00:00:00Z",
+      updatedAt: "2024-01-05T00:00:00Z",
+      reporterId: "550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      id: "d7d7d7d7-e8e8-f9f9-a0a0-b1b1b1b1b1b1",
+      title: "Website Unavailable",
+      description: "Users are unable to access the website.",
+      severity: "major",
+      status: "in progress",
+      createdAt: "2024-01-06T00:00:00Z",
+      updatedAt: "2024-01-06T00:00:00Z",
+      reporterId: "550e8400-e29b-41d4-a716-446655440001"
+    }
+  ])
+  incidentCategory_insertMany(data: [
+    {
+      incidentId: "c2c2c2c2-d3d3-e4e4-f5f5-a6a6a6a6a6a6",
+      categoryId: "a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5",
+      createdAt: "2024-01-05T00:00:00Z"
+    },
+    {
+      incidentId: "d7d7d7d7-e8e8-f9f9-a0a0-b1b1b1b1b1b1",
+      categoryId: "b6b6b6b6-c7c7-d8d8-e9e9-f0f0f0f0f0f0",
+      createdAt: "2024-01-06T00:00:00Z"
+    }
+  ])
+  comment_insertMany(data: [
+    {
+      id: "e3e3e3e3-f4f4-a5a5-b6b6-c7c7c7c7c7c7",
+      incidentId: "c2c2c2c2-d3d3-e4e4-f5f5-a6a6a6a6a6a6",
+      userId: "550e8400-e29b-41d4-a716-446655440000",
+      text: "Initial investigation started.",
+      createdAt: "2024-01-05T01:00:00Z"
+    },
+    {
+      id: "f8f8f8f8-a9a9-b0b0-c1c1-d2d2d2d2d2d2",
+      incidentId: "d7d7d7d7-e8e8-f9f9-a0a0-b1b1b1b1b1b1",
+      userId: "550e8400-e29b-41d4-a716-446655440001",
+      text: "Awaiting network team response.",
+      createdAt: "2024-01-06T02:00:00Z"
+    }
+  ])
+}
