@@ -1,35 +1,58 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+// src/App.jsx
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+// Assuming the path is correct:
+import { auth } from "./lib/firebase"; 
+import { onAuthStateChanged } from "firebase/auth";
+import Nav from "./components/Nav";
 
-function App() {
-  const [count, setCount] = useState(0)
+// Context for global user state
+export const AuthContext = React.createContext(null);
 
+export default function App() {
+  const [user, setUser] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  // Auth state listener hook
+  React.useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  // Loading state (shows spinner)
+  if (loading) {
+    return (
+      <div className="page-center">
+        {/* Placeholder for a simple spinner */}
+        <div className="text-xl font-semibold text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  // Main App Router with Auth Context Provider
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <AuthContext.Provider value={user}>
+      <Nav user={user} />
+      <Routes>
+        {/* Root path: Redirects based on auth status */}
+        <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Navigate to="/login" />} />
+        
+        {/* Auth routes: Redirects away if logged in */}
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
+        <Route path="/register" element={!user ? <Register /> : <Navigate to="/dashboard" />} />
+        
+        {/* Protected route: Redirects to login if not logged in */}
+        <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" />} />
+        
+        {/* Catch-all route */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </AuthContext.Provider>
+  );
 }
-
-export default App
