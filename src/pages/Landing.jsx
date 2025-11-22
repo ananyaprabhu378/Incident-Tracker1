@@ -102,7 +102,7 @@ function Landing() {
                 textDecoration: "none",
               }}
             >
-              Create demo accounts
+              Create account
             </Link>
             <span
               style={{
