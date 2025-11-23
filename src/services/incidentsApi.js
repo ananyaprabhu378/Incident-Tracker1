@@ -10,40 +10,35 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-const incidentsCol = collection(db, "incidents");
+const INCIDENTS_COLLECTION = "incidents";
 
-// 🔄 Real-time subscription to all incidents
+// 🔄 Real-time subscription to all incidents (shared across devices)
 export function subscribeToIncidents(callback) {
-  const q = query(incidentsCol, orderBy("createdAt", "desc"));
+  const q = query(
+    collection(db, INCIDENTS_COLLECTION),
+    orderBy("createdAt", "desc")
+  );
 
   return onSnapshot(q, (snapshot) => {
-    const data = snapshot.docs.map((d) => ({
-      id: d.id,
+    const list = snapshot.docs.map((d) => ({
+      _docId: d.id, // Firestore document id (for updates)
       ...d.data(),
     }));
-    callback(data);
+    callback(list);
   });
 }
 
-// ➕ Create new incident
-export async function createIncident(incident) {
-  const now = new Date().toISOString();
-
+// ➕ Create new incident document
+export async function createIncident(data) {
   const payload = {
-    ...incident,
-    status: incident.status || "New",
-    createdAt: incident.createdAt || now,
-    updatedAt: now,
+    ...data,
+    createdAt: data.createdAt || new Date().toISOString(),
   };
-
-  await addDoc(incidentsCol, payload);
+  await addDoc(collection(db, INCIDENTS_COLLECTION), payload);
 }
 
-// ✏️ Update incident (status, technician, etc.)
-export async function updateIncident(id, partial) {
-  const ref = doc(db, "incidents", id);
-  await updateDoc(ref, {
-    ...partial,
-    updatedAt: new Date().toISOString(),
-  });
+// ✏️ Update existing incident by Firestore document id
+export async function updateIncident(docId, partial) {
+  const ref = doc(db, INCIDENTS_COLLECTION, docId);
+  await updateDoc(ref, partial);
 }

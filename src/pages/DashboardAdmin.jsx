@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { subscribeToIncidents } from "../services/incidentsApi"; // ✅ Firestore backend
+import { subscribeToIncidents } from "../services/incidentsApi"; // 🔥 Firestore
 
 // logistic
 function sigmoid(x) {
@@ -9,10 +9,10 @@ function sigmoid(x) {
 function DashboardAdmin() {
   const [incidents, setIncidents] = useState([]);
 
-  // 🔄 Load incidents from Firestore instead of localStorage
+  // 🔄 Subscribe to Firestore incidents
   useEffect(() => {
     const unsub = subscribeToIncidents((all) => {
-      setIncidents(all);
+      setIncidents(all || []);
     });
     return () => unsub();
   }, []);
@@ -582,9 +582,8 @@ function DashboardAdmin() {
                   }}
                 >
                   Interpretation: frequently recurring, high-priority and
-                  long-lived{" "}
-                  <strong>{r.category.toLowerCase()}</strong> issues in{" "}
-                  <strong>{r.hostel}</strong> push this probability upward.
+                  long-lived <strong>{r.category.toLowerCase()}</strong> issues
+                  in <strong>{r.hostel}</strong> push this probability upward.
                   Admins can proactively schedule checks or preventive
                   maintenance for the highest-risk pairs.
                 </p>

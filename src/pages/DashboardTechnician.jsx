@@ -3,28 +3,7 @@ import useAuth from "../hooks/useauth.jsx";
 import {
   subscribeToIncidents,
   updateIncident,
-} from "../services/incidentsApi"; // 🔥 Firestore backend
-
-const NOTIF_KEY = "notifications_v1";
-
-function loadNotifications() {
-  try {
-    const raw = localStorage.getItem(NOTIF_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveNotifications(list) {
-  localStorage.setItem(NOTIF_KEY, JSON.stringify(list));
-}
-
-function pushNotification(notification) {
-  const all = loadNotifications();
-  all.unshift(notification);
-  saveNotifications(all);
-}
+} from "../services/incidentsApi"; // Firestore backend
 
 // small helpers
 function formatAge(createdAt) {
@@ -57,22 +36,18 @@ function DashboardTechnician() {
 
   const technicianId = user?.email || "tech";
 
-  // 🔄 Load incidents from Firestore (shared backend)
+  // 🔄 Subscribe to Firestore incidents
   useEffect(() => {
-    const unsub = subscribeToIncidents((all) => {
-      setIncidents(all);
-    });
+    const unsub = subscribeToIncidents((all) => setIncidents(all || []));
     return () => unsub();
   }, []);
 
-  // recompute some scheduling stats
   const metrics = useMemo(() => {
     const assignedToMe = incidents.filter(
       (i) => i.assignedTo === technicianId && i.status !== "Resolved"
     );
     const inProgress = assignedToMe.filter((i) => i.status === "In Progress");
     const slaRisk = assignedToMe.filter((i) => isSlaBreached(i.createdAt));
-
     return {
       assignedCount: assignedToMe.length,
       inProgressCount: inProgress.length,
@@ -80,13 +55,12 @@ function DashboardTechnician() {
     };
   }, [incidents, technicianId]);
 
-  // filter + sort list
   const visibleIncidents = useMemo(() => {
     let list = incidents.filter((i) => i.status !== "Resolved");
     if (filterPriority !== "all") {
       list = list.filter((i) => i.priority === filterPriority);
     }
-    // sort: high priority first, then SLA-breached, then newest
+
     const priorityOrder = { High: 0, Medium: 1, Low: 2 };
     return [...list].sort((a, b) => {
       const aSla = isSlaBreached(a.createdAt);
@@ -100,274 +74,53 @@ function DashboardTechnician() {
     });
   }, [incidents, filterPriority]);
 
-  const handleAssignToMe = async (incidentId) => {
-    setError("");
-    setInfo("");
+  // ---------- ACTION HANDLERS USING FIRESTORE ----------
 
-    const incident = incidents.find((i) => i.id === incidentId);
-    if (incident) {
-      setSelectedIncident(incident);
-    }
-
-    const myOpenAssigned = incidents.filter(
-      (i) => i.assignedTo === technicianId && i.status !== "Resolved"
-    );
-    if (myOpenAssigned.length >= 1) {
+  const handleAssignToMe = async (incident) => {
+    if (metrics.assignedCount >= 1) {
       setError(
-        "You already have an assigned incident. Resolve or release it before taking a new one (no overlapping tasks)."
+        "You already have an assigned incident. Resolve or release it before taking another."
       );
       return;
     }
 
-    if (!incident) return;
-
-    if (incident.assignedTo && incident.assignedTo !== technicianId) {
-      setError("This incident is already assigned to another technician.");
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-
-    try {
-      await updateIncident(incident.firestoreId || incident.id, {
-        assignedTo: technicianId,
-        assignedName: user?.name || "Technician",
-        assignedAt: nowIso,
-      });
-
-      setInfo("Incident assigned to you. Full details shown above.");
-
-      const locationDisplay =
-        incident.location ||
-        [
-          incident.hostel,
-          incident.room ? `Room ${incident.room}` : null,
-        ]
-          .filter(Boolean)
-          .join(" - ");
-      const base = `${incident.category} issue in ${locationDisplay}`;
-
-      const notifNow = new Date().toISOString();
-
-      if (incident.reporterEmail) {
-        pushNotification({
-          id: Date.now() + 1,
-          targetRole: "reporter",
-          targetEmail: incident.reporterEmail,
-          title: "Technician assigned",
-          message: `A technician has been assigned to your ${base}.`,
-          createdAt: notifNow,
-        });
-      }
-
-      pushNotification({
-        id: Date.now() + 2,
-        targetRole: "admin",
-        targetEmail: null,
-        title: "Technician assigned",
-        message: `Technician ${user?.name || ""} took ownership of ${base}.`,
-        createdAt: notifNow,
-      });
-    } catch (err) {
-      console.error("Failed to assign incident", err);
-      setError("Could not assign this incident. Please try again.");
-    }
+    setSelectedIncident(incident);
+    await updateIncident(incident._docId, {
+      assignedTo: technicianId,
+      assignedName: user?.name || "Technician",
+      assignedAt: new Date().toISOString(),
+    });
+    setInfo("Incident assigned to you.");
   };
 
-  const handleStartWork = async (incidentId) => {
-    setError("");
-    setInfo("");
-
-    const incident = incidents.find((i) => i.id === incidentId);
-    if (incident) {
-      setSelectedIncident(incident);
-    }
-    if (!incident) return;
-
-    const inProgressMine = incidents.filter(
-      (i) => i.assignedTo === technicianId && i.status === "In Progress"
-    );
-    if (inProgressMine.length >= 1) {
-      setError(
-        "You already have one task in progress. Finish it before starting another."
-      );
-      return;
-    }
-
-    if (incident.assignedTo !== technicianId) {
-      setError("You can only start work on incidents assigned to you.");
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-
-    try {
-      await updateIncident(incident.firestoreId || incident.id, {
-        status: "In Progress",
-        startedAt: nowIso,
-      });
-
-      setInfo("Work started on incident. Full details shown above.");
-
-      const locationDisplay =
-        incident.location ||
-        [
-          incident.hostel,
-          incident.room ? `Room ${incident.room}` : null,
-        ]
-          .filter(Boolean)
-          .join(" - ");
-      const base = `${incident.category} issue in ${locationDisplay}`;
-      const notifNow = new Date().toISOString();
-
-      if (incident.reporterEmail) {
-        pushNotification({
-          id: Date.now() + 1,
-          targetRole: "reporter",
-          targetEmail: incident.reporterEmail,
-          title: "Issue being worked on",
-          message: `A technician has started working on your ${base}.`,
-          createdAt: notifNow,
-        });
-      }
-
-      pushNotification({
-        id: Date.now() + 2,
-        targetRole: "admin",
-        targetEmail: null,
-        title: "Issue being worked on",
-        message: `Technician ${user?.name || ""} started ${base}.`,
-        createdAt: notifNow,
-      });
-    } catch (err) {
-      console.error("Failed to start work", err);
-      setError("Could not update status. Please try again.");
-    }
+  const handleStartWork = async (incident) => {
+    setSelectedIncident(incident);
+    await updateIncident(incident._docId, {
+      status: "In Progress",
+      startedAt: new Date().toISOString(),
+    });
+    setInfo("Work started.");
   };
 
-  const handleResolve = async (incidentId) => {
-    setError("");
-    setInfo("");
-
-    const incident = incidents.find((i) => i.id === incidentId);
-    if (incident) {
-      setSelectedIncident(incident);
-    }
-    if (!incident) return;
-
-    if (incident.assignedTo !== technicianId) {
-      setError("You can only resolve incidents assigned to you.");
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-
-    try {
-      await updateIncident(incident.firestoreId || incident.id, {
-        status: "Resolved",
-        resolvedAt: nowIso,
-      });
-
-      setInfo("Incident resolved. Full details shown above.");
-
-      const locationDisplay =
-        incident.location ||
-        [
-          incident.hostel,
-          incident.room ? `Room ${incident.room}` : null,
-        ]
-          .filter(Boolean)
-          .join(" - ");
-      const base = `${incident.category} issue in ${locationDisplay}`;
-      const notifNow = new Date().toISOString();
-
-      if (incident.reporterEmail) {
-        pushNotification({
-          id: Date.now() + 1,
-          targetRole: "reporter",
-          targetEmail: incident.reporterEmail,
-          title: "Issue resolved",
-          message: `Your ${base} has been marked as resolved.`,
-          createdAt: notifNow,
-        });
-      }
-
-      pushNotification({
-        id: Date.now() + 2,
-        targetRole: "admin",
-        targetEmail: null,
-        title: "Issue resolved",
-        message: `Technician ${user?.name || ""} resolved ${base}.`,
-        createdAt: notifNow,
-      });
-    } catch (err) {
-      console.error("Failed to resolve incident", err);
-      setError("Could not resolve this incident. Please try again.");
-    }
+  const handleResolve = async (incident) => {
+    setSelectedIncident(incident);
+    await updateIncident(incident._docId, {
+      status: "Resolved",
+      resolvedAt: new Date().toISOString(),
+    });
+    setInfo("Incident marked resolved.");
   };
 
-  const handleRelease = async (incidentId) => {
-    setError("");
-    setInfo("");
-
-    const incident = incidents.find((i) => i.id === incidentId);
-    if (incident) {
-      setSelectedIncident(incident);
-    }
-    if (!incident) return;
-
-    if (incident.assignedTo !== technicianId) {
-      setError("You can only release incidents assigned to you.");
-      return;
-    }
-
-    try {
-      await updateIncident(incident.firestoreId || incident.id, {
-        assignedTo: null,
-        assignedName: null,
-        assignedAt: null,
-        startedAt: null,
-        status: "New",
-      });
-
-      setInfo("Assignment released. Incident is back in the pool.");
-
-      const locationDisplay =
-        incident.location ||
-        [
-          incident.hostel,
-          incident.room ? `Room ${incident.room}` : null,
-        ]
-          .filter(Boolean)
-          .join(" - ");
-      const base = `${incident.category} issue in ${locationDisplay}`;
-      const notifNow = new Date().toISOString();
-
-      if (incident.reporterEmail) {
-        pushNotification({
-          id: Date.now() + 1,
-          targetRole: "reporter",
-          targetEmail: incident.reporterEmail,
-          title: "Technician reassigned",
-          message: `Your ${base} has been released and may be picked up by another technician.`,
-          createdAt: notifNow,
-        });
-      }
-
-      pushNotification({
-        id: Date.now() + 2,
-        targetRole: "admin",
-        targetEmail: null,
-        title: "Technician reassigned",
-        message: `Incident ${base} was released by ${
-          user?.name || ""
-        } and is unassigned again.`,
-        createdAt: notifNow,
-      });
-    } catch (err) {
-      console.error("Failed to release incident", err);
-      setError("Could not release this incident. Please try again.");
-    }
+  const handleRelease = async (incident) => {
+    setSelectedIncident(incident);
+    await updateIncident(incident._docId, {
+      assignedTo: null,
+      assignedName: null,
+      assignedAt: null,
+      startedAt: null,
+      status: "New",
+    });
+    setInfo("Incident released.");
   };
 
   const renderLocationDisplay = (i) => {
@@ -380,7 +133,6 @@ function DashboardTechnician() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      {/* Header + workload summary */}
       <div
         style={{
           display: "grid",
@@ -393,8 +145,7 @@ function DashboardTechnician() {
             Technician workload
           </h2>
           <p style={{ fontSize: "0.9rem", color: "#6b7280" }}>
-            Take ownership of incidents, avoid overlapping assignments, and keep
-            admins and reporters updated as you work.
+            Take ownership of incidents and resolve them in priority order.
           </p>
         </div>
 
@@ -431,108 +182,35 @@ function DashboardTechnician() {
         </div>
       </div>
 
-      {/* Selected incident details panel */}
-      {selectedIncident && (
+      {error && (
         <div
           style={{
-            padding: "14px 16px",
-            borderRadius: 16,
-            background: "white",
-            boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
+            marginBottom: 8,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "#fee2e2",
+            color: "#b91c1c",
+            fontSize: "0.85rem",
           }}
         >
-          <p
-            style={{
-              fontSize: "0.8rem",
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              color: "#6b7280",
-              marginBottom: 6,
-            }}
-          >
-            Selected incident details
-          </p>
-          <h3
-            style={{
-              fontSize: "1rem",
-              fontWeight: 600,
-              marginBottom: 4,
-              color: "#0f172a",
-            }}
-          >
-            {selectedIncident.title}
-          </h3>
-          <p
-            style={{
-              fontSize: "0.85rem",
-              color: "#4b5563",
-              marginBottom: 4,
-            }}
-          >
-            {selectedIncident.category} ·{" "}
-            {renderLocationDisplay(selectedIncident)}
-          </p>
-          <p
-            style={{
-              fontSize: "0.8rem",
-              color: "#6b7280",
-              marginBottom: 6,
-            }}
-          >
-            Hostel: {selectedIncident.hostel || "—"} · Room:{" "}
-            {selectedIncident.room || "—"}
-          </p>
-          <p
-            style={{
-              fontSize: "0.85rem",
-              color: "#111827",
-              marginBottom: 6,
-            }}
-          >
-            {selectedIncident.description}
-          </p>
-
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 12,
-              fontSize: "0.8rem",
-              color: "#6b7280",
-            }}
-          >
-            <span>
-              Priority: <strong>{selectedIncident.priority}</strong>
-            </span>
-            <span>
-              Status: <strong>{selectedIncident.status}</strong>
-            </span>
-            <span>
-              Created:{" "}
-              {selectedIncident.createdAt
-                ? new Date(selectedIncident.createdAt).toLocaleString()
-                : "—"}
-            </span>
-            <span>Age: {formatAge(selectedIncident.createdAt)}</span>
-            {selectedIncident.latitude && selectedIncident.longitude && (
-              <span>
-                GPS:{" "}
-                <a
-                  href={`https://www.google.com/maps?q=${selectedIncident.latitude},${selectedIncident.longitude}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ textDecoration: "underline", color: "#2563eb" }}
-                >
-                  {selectedIncident.latitude.toFixed(4)},{" "}
-                  {selectedIncident.longitude.toFixed(4)}
-                </a>
-              </span>
-            )}
-          </div>
+          {error}
+        </div>
+      )}
+      {info && (
+        <div
+          style={{
+            marginBottom: 8,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "#e0f2fe",
+            color: "#075985",
+            fontSize: "0.85rem",
+          }}
+        >
+          {info}
         </div>
       )}
 
-      {/* Filters + list */}
       <div
         style={{
           padding: "16px 18px",
@@ -575,39 +253,9 @@ function DashboardTechnician() {
           </div>
         </div>
 
-        {error && (
-          <div
-            style={{
-              marginBottom: 8,
-              padding: "8px 10px",
-              borderRadius: 8,
-              background: "#fee2e2",
-              color: "#b91c1c",
-              fontSize: "0.85rem",
-            }}
-          >
-            {error}
-          </div>
-        )}
-        {info && (
-          <div
-            style={{
-              marginBottom: 8,
-              padding: "8px 10px",
-              borderRadius: 8,
-              background: "#e0f2fe",
-              color: "#075985",
-              fontSize: "0.85rem",
-            }}
-          >
-            {info}
-          </div>
-        )}
-
         {visibleIncidents.length === 0 ? (
           <p style={{ fontSize: "0.9rem", color: "#6b7280" }}>
-            No open incidents right now. Once reporters log issues, they’ll
-            appear here ranked by priority, SLA risk and recency.
+            No open incidents right now.
           </p>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
@@ -621,16 +269,13 @@ function DashboardTechnician() {
               if (i.status === "In Progress") {
                 statusBadgeBg = "#fef3c7";
                 statusBadgeColor = "#92400e";
-              } else if (i.status === "Resolved") {
-                statusBadgeBg = "#dcfce7";
-                statusBadgeColor = "#166534";
               }
 
               const locationDisplay = renderLocationDisplay(i);
 
               return (
                 <div
-                  key={i.id}
+                  key={i._docId}
                   style={{
                     padding: "10px 12px",
                     borderRadius: 12,
@@ -687,7 +332,6 @@ function DashboardTechnician() {
                     {i.category} · {locationDisplay}
                   </p>
 
-                  {/* GPS info directly under location */}
                   {i.latitude && i.longitude && (
                     <p
                       style={{
@@ -696,7 +340,7 @@ function DashboardTechnician() {
                         marginBottom: 4,
                       }}
                     >
-                      GPS:{" "}
+                      GPS:
                       <a
                         href={`https://www.google.com/maps?q=${i.latitude},${i.longitude}`}
                         target="_blank"
@@ -729,9 +373,7 @@ function DashboardTechnician() {
                       marginBottom: 8,
                     }}
                   >
-                    <div
-                      style={{ display: "flex", gap: 6, alignItems: "center" }}
-                    >
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <span
                         style={{
                           fontSize: "0.75rem",
@@ -751,9 +393,7 @@ function DashboardTechnician() {
                           }}
                         >
                           Assigned to{" "}
-                          {isMine
-                            ? "you"
-                            : i.assignedName || i.assignedTo || "technician"}
+                          {isMine ? "you" : i.assignedName || "technician"}
                         </span>
                       )}
                       {sla && (
@@ -810,7 +450,7 @@ function DashboardTechnician() {
                     {!i.assignedTo && (
                       <button
                         type="button"
-                        onClick={() => handleAssignToMe(i.id)}
+                        onClick={() => handleAssignToMe(i)}
                         style={{
                           fontSize: "0.8rem",
                           padding: "5px 10px",
@@ -829,7 +469,7 @@ function DashboardTechnician() {
                       <>
                         <button
                           type="button"
-                          onClick={() => handleStartWork(i.id)}
+                          onClick={() => handleStartWork(i)}
                           style={{
                             fontSize: "0.8rem",
                             padding: "5px 10px",
@@ -844,7 +484,7 @@ function DashboardTechnician() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleRelease(i.id)}
+                          onClick={() => handleRelease(i)}
                           style={{
                             fontSize: "0.8rem",
                             padding: "5px 10px",
@@ -864,7 +504,7 @@ function DashboardTechnician() {
                       <>
                         <button
                           type="button"
-                          onClick={() => handleResolve(i.id)}
+                          onClick={() => handleResolve(i)}
                           style={{
                             fontSize: "0.8rem",
                             padding: "5px 10px",
@@ -879,7 +519,7 @@ function DashboardTechnician() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleRelease(i.id)}
+                          onClick={() => handleRelease(i)}
                           style={{
                             fontSize: "0.8rem",
                             padding: "5px 10px",
@@ -893,17 +533,6 @@ function DashboardTechnician() {
                           Release
                         </button>
                       </>
-                    )}
-
-                    {!isMine && i.assignedTo && (
-                      <span
-                        style={{
-                          fontSize: "0.75rem",
-                          color: "#9ca3af",
-                        }}
-                      >
-                        (Owned by another technician)
-                      </span>
                     )}
                   </div>
                 </div>
