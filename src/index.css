@@ -127,3 +127,31 @@ input::placeholder,
 textarea::placeholder {
   color: #6b7280 !important;   /* grey placeholder */
 }
+/* ===== Admin stats cards: make numbers visible and pretty ===== */
+
+.admin-stat-card {
+  flex: 1;
+  min-width: 140px;
+  height: 95px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.9); /* dark glass */
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+
+.admin-stat-number {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 0 10px #22c55e;
+}
+
+.admin-stat-label {
+  font-size: 0.85rem;
+  margin-top: 4px;
+  color: #e5e7eb;
+}

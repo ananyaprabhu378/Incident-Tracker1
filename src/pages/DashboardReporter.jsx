@@ -1,22 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import useAuth from "../hooks/useauth.jsx";
+import {
+  subscribeToIncidents,
+  createIncident,
+} from "../services/incidentsApi"; // 🔥 Firestore backend
 
-const INCIDENT_STORAGE_KEY = "incidents_v1";
+// ⛔ incidents localStorage removed – we now use Firestore for incidents
 const NOTIF_KEY = "notifications_v1";
-
-function loadIncidents() {
-  try {
-    const raw = localStorage.getItem(INCIDENT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveIncidents(list) {
-  localStorage.setItem(INCIDENT_STORAGE_KEY, JSON.stringify(list));
-}
 
 function loadNotifications() {
   try {
@@ -84,8 +75,15 @@ function DashboardReporter() {
     error: "",
   });
 
+  // 🔄 Subscribe to Firestore incidents (shared backend)
   useEffect(() => {
-    setIncidents(loadIncidents());
+    const unsub = subscribeToIncidents((all) => {
+      // keep ALL incidents so:
+      // - duplicate check works across campus
+      // - prediction uses campus history
+      setIncidents(all);
+    });
+    return () => unsub();
   }, []);
 
   const handleChange = (e) => {
@@ -125,7 +123,7 @@ function DashboardReporter() {
     );
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
@@ -135,11 +133,11 @@ function DashboardReporter() {
       return;
     }
 
+    const reporterEmail = user?.email || "anonymous";
+
     // anti-spam: max 5 active incidents per user
     const myOpen = incidents.filter(
-      (i) =>
-        i.reporterEmail === (user?.email || "anonymous") &&
-        i.status !== "Resolved"
+      (i) => i.reporterEmail === reporterEmail && i.status !== "Resolved"
     );
     if (myOpen.length >= 5) {
       setError(
@@ -179,6 +177,7 @@ function DashboardReporter() {
     const locationDisplay = `${form.hostel} - Room ${form.room}`;
 
     const newIncident = {
+      // Firestore will create its own document ID; this is just stored as a field
       id: Date.now(),
       title: form.title,
       category: form.category,
@@ -189,54 +188,58 @@ function DashboardReporter() {
       imageUrl: form.imageUrl,
       priority,
       status: "New",
-      reporterEmail: user?.email || "anonymous",
+      reporterEmail,
       createdAt: nowIso,
       latitude: gps.lat,
       longitude: gps.lng,
     };
 
-    const updated = [newIncident, ...incidents];
-    setIncidents(updated);
-    saveIncidents(updated);
+    try {
+      // ✅ Save to Firestore instead of localStorage
+      await createIncident(newIncident);
 
-    // 🔔 Notifications
-    pushNotification({
-      id: Date.now() + 1,
-      targetRole: "reporter",
-      targetEmail: user?.email || null,
-      title: "Incident recorded",
-      message: `Your ${priority} priority ${form.category} issue in ${locationDisplay} has been logged.`,
-      createdAt: nowIso,
-    });
-
-    pushNotification({
-      id: Date.now() + 2,
-      targetRole: "admin",
-      targetEmail: null,
-      title: "New campus incident",
-      message: `${priority} priority ${form.category} issue reported in ${locationDisplay}.`,
-      createdAt: nowIso,
-    });
-
-    if (priority === "High") {
+      // 🔔 Notifications still stored locally (per browser)
       pushNotification({
-        id: Date.now() + 3,
-        targetRole: "technician",
-        targetEmail: null,
-        title: "High priority incident",
-        message: `High priority ${form.category} issue in ${locationDisplay} requires quick attention.`,
+        id: Date.now() + 1,
+        targetRole: "reporter",
+        targetEmail: reporterEmail,
+        title: "Incident recorded",
+        message: `Your ${priority} priority ${form.category} issue in ${locationDisplay} has been logged.`,
         createdAt: nowIso,
       });
-    }
 
-    setSuccess("Incident created successfully with priority: " + priority);
-    setForm((prev) => ({
-      ...prev,
-      title: "",
-      description: "",
-      imageUrl: "",
-      // keep category, hostel, room, manualPriority so prediction still works
-    }));
+      pushNotification({
+        id: Date.now() + 2,
+        targetRole: "admin",
+        targetEmail: null,
+        title: "New campus incident",
+        message: `${priority} priority ${form.category} issue reported in ${locationDisplay}.`,
+        createdAt: nowIso,
+      });
+
+      if (priority === "High") {
+        pushNotification({
+          id: Date.now() + 3,
+          targetRole: "technician",
+          targetEmail: null,
+          title: "High priority incident",
+          message: `High priority ${form.category} issue in ${locationDisplay} requires quick attention.`,
+          createdAt: nowIso,
+        });
+      }
+
+      setSuccess("Incident created successfully with priority: " + priority);
+      setForm((prev) => ({
+        ...prev,
+        title: "",
+        description: "",
+        imageUrl: "",
+        // keep category, hostel, room, manualPriority so prediction still works
+      }));
+    } catch (err) {
+      console.error("Failed to create incident", err);
+      setError("Could not create incident. Please try again.");
+    }
   };
 
   // Simple frequency-based prediction (repeating patterns by hostel)
@@ -260,7 +263,7 @@ function DashboardReporter() {
     .filter((i) => i.reporterEmail === (user?.email || "anonymous"))
     .slice(0, 4);
 
-  // 🔮 Stronger prediction model reused from Admin (per hostel+category)
+  // 🔮 Stronger prediction model reused (per hostel+category)
   const advancedPrediction = useMemo(() => {
     if (!incidents.length) {
       return { currentPair: null, topForHostel: [] };
@@ -820,7 +823,9 @@ function DashboardReporter() {
             boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
           }}
         >
-          <h3 style={{ fontSize: "1.05rem", fontWeight: 600, marginBottom: 10 }}>
+          <h3
+            style={{ fontSize: "1.05rem", fontWeight: 600, marginBottom: 10 }}
+          >
             Recent incidents by you
           </h3>
           {recent.length === 0 && (
@@ -924,10 +929,12 @@ function DashboardReporter() {
                       color: "#9ca3af",
                     }}
                   >
-                    {new Date(i.createdAt).toLocaleString(undefined, {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                    {i.createdAt
+                      ? new Date(i.createdAt).toLocaleString(undefined, {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })
+                      : "—"}
                   </span>
                 </div>
               </div>

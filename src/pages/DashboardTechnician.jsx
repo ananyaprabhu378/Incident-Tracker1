@@ -1,21 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import useAuth from "../hooks/useauth.jsx";
+import {
+  subscribeToIncidents,
+  updateIncident,
+} from "../services/incidentsApi"; // 🔥 Firestore backend
 
-const INCIDENT_STORAGE_KEY = "incidents_v1";
 const NOTIF_KEY = "notifications_v1";
-
-function loadIncidents() {
-  try {
-    const raw = localStorage.getItem(INCIDENT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveIncidents(list) {
-  localStorage.setItem(INCIDENT_STORAGE_KEY, JSON.stringify(list));
-}
 
 function loadNotifications() {
   try {
@@ -67,8 +57,12 @@ function DashboardTechnician() {
 
   const technicianId = user?.email || "tech";
 
+  // 🔄 Load incidents from Firestore (shared backend)
   useEffect(() => {
-    setIncidents(loadIncidents());
+    const unsub = subscribeToIncidents((all) => {
+      setIncidents(all);
+    });
+    return () => unsub();
   }, []);
 
   // recompute some scheduling stats
@@ -106,36 +100,63 @@ function DashboardTechnician() {
     });
   }, [incidents, filterPriority]);
 
-  const updateIncidents = (updater, notificationBuilder) => {
+  const handleAssignToMe = async (incidentId) => {
     setError("");
     setInfo("");
 
-    const current = loadIncidents(); // reload from storage
-    const updated = updater(current);
+    const incident = incidents.find((i) => i.id === incidentId);
+    if (incident) {
+      setSelectedIncident(incident);
+    }
 
-    if (!updated) return; // updater already handled error
+    const myOpenAssigned = incidents.filter(
+      (i) => i.assignedTo === technicianId && i.status !== "Resolved"
+    );
+    if (myOpenAssigned.length >= 1) {
+      setError(
+        "You already have an assigned incident. Resolve or release it before taking a new one (no overlapping tasks)."
+      );
+      return;
+    }
 
-    saveIncidents(updated);
-    setIncidents(updated);
+    if (!incident) return;
 
-    if (notificationBuilder) {
-      const {
-        reporterEmail,
-        title,
-        messageForReporter,
-        messageForAdmin,
-      } = notificationBuilder;
+    if (incident.assignedTo && incident.assignedTo !== technicianId) {
+      setError("This incident is already assigned to another technician.");
+      return;
+    }
 
-      const nowIso = new Date().toISOString();
+    const nowIso = new Date().toISOString();
 
-      if (reporterEmail) {
+    try {
+      await updateIncident(incident.firestoreId || incident.id, {
+        assignedTo: technicianId,
+        assignedName: user?.name || "Technician",
+        assignedAt: nowIso,
+      });
+
+      setInfo("Incident assigned to you. Full details shown above.");
+
+      const locationDisplay =
+        incident.location ||
+        [
+          incident.hostel,
+          incident.room ? `Room ${incident.room}` : null,
+        ]
+          .filter(Boolean)
+          .join(" - ");
+      const base = `${incident.category} issue in ${locationDisplay}`;
+
+      const notifNow = new Date().toISOString();
+
+      if (incident.reporterEmail) {
         pushNotification({
           id: Date.now() + 1,
           targetRole: "reporter",
-          targetEmail: reporterEmail,
-          title,
-          message: messageForReporter,
-          createdAt: nowIso,
+          targetEmail: incident.reporterEmail,
+          title: "Technician assigned",
+          message: `A technician has been assigned to your ${base}.`,
+          createdAt: notifNow,
         });
       }
 
@@ -143,245 +164,210 @@ function DashboardTechnician() {
         id: Date.now() + 2,
         targetRole: "admin",
         targetEmail: null,
-        title,
-        message: messageForAdmin,
-        createdAt: nowIso,
+        title: "Technician assigned",
+        message: `Technician ${user?.name || ""} took ownership of ${base}.`,
+        createdAt: notifNow,
       });
+    } catch (err) {
+      console.error("Failed to assign incident", err);
+      setError("Could not assign this incident. Please try again.");
     }
   };
 
-  const handleAssignToMe = (incidentId) => {
-    const inc = incidents.find((i) => i.id === incidentId);
-    if (inc) {
-      setSelectedIncident(inc);
+  const handleStartWork = async (incidentId) => {
+    setError("");
+    setInfo("");
+
+    const incident = incidents.find((i) => i.id === incidentId);
+    if (incident) {
+      setSelectedIncident(incident);
     }
+    if (!incident) return;
 
-    updateIncidents(
-      (current) => {
-        const myOpenAssigned = current.filter(
-          (i) => i.assignedTo === technicianId && i.status !== "Resolved"
-        );
-        if (myOpenAssigned.length >= 1) {
-          setError(
-            "You already have an assigned incident. Resolve or release it before taking a new one (no overlapping tasks)."
-          );
-          return null;
-        }
-
-        const idx = current.findIndex((i) => i.id === incidentId);
-        if (idx === -1) return current;
-
-        const incident = current[idx];
-
-        if (incident.assignedTo && incident.assignedTo !== technicianId) {
-          setError("This incident is already assigned to another technician.");
-          return null;
-        }
-
-        const updatedIncident = {
-          ...incident,
-          assignedTo: technicianId,
-          assignedName: user?.name || "Technician",
-          assignedAt: new Date().toISOString(),
-        };
-
-        const copy = [...current];
-        copy[idx] = updatedIncident;
-
-        setInfo("Incident assigned to you. Full details shown above.");
-        return copy;
-      },
-      () => {
-        const incident = incidents.find((i) => i.id === incidentId);
-        if (!incident) return {};
-        const locationDisplay =
-          incident.location ||
-          [
-            incident.hostel,
-            incident.room ? `Room ${incident.room}` : null,
-          ]
-            .filter(Boolean)
-            .join(" - ");
-        const base = `${incident.category} issue in ${locationDisplay}`;
-        return {
-          reporterEmail: incident.reporterEmail,
-          title: "Technician assigned",
-          messageForReporter: `A technician has been assigned to your ${base}.`,
-          messageForAdmin: `Technician ${user?.name || ""} took ownership of ${base}.`,
-        };
-      }
+    const inProgressMine = incidents.filter(
+      (i) => i.assignedTo === technicianId && i.status === "In Progress"
     );
-  };
-
-  const handleStartWork = (incidentId) => {
-    const inc = incidents.find((i) => i.id === incidentId);
-    if (inc) {
-      setSelectedIncident(inc);
+    if (inProgressMine.length >= 1) {
+      setError(
+        "You already have one task in progress. Finish it before starting another."
+      );
+      return;
     }
 
-    updateIncidents(
-      (current) => {
-        const inProgressMine = current.filter(
-          (i) => i.assignedTo === technicianId && i.status === "In Progress"
-        );
-        if (inProgressMine.length >= 1) {
-          setError(
-            "You already have one task in progress. Finish it before starting another."
-          );
-          return null;
-        }
+    if (incident.assignedTo !== technicianId) {
+      setError("You can only start work on incidents assigned to you.");
+      return;
+    }
 
-        const idx = current.findIndex((i) => i.id === incidentId);
-        if (idx === -1) return current;
+    const nowIso = new Date().toISOString();
 
-        const incident = current[idx];
+    try {
+      await updateIncident(incident.firestoreId || incident.id, {
+        status: "In Progress",
+        startedAt: nowIso,
+      });
 
-        if (incident.assignedTo !== technicianId) {
-          setError("You can only start work on incidents assigned to you.");
-          return null;
-        }
+      setInfo("Work started on incident. Full details shown above.");
 
-        const updatedIncident = {
-          ...incident,
-          status: "In Progress",
-          startedAt: new Date().toISOString(),
-        };
+      const locationDisplay =
+        incident.location ||
+        [
+          incident.hostel,
+          incident.room ? `Room ${incident.room}` : null,
+        ]
+          .filter(Boolean)
+          .join(" - ");
+      const base = `${incident.category} issue in ${locationDisplay}`;
+      const notifNow = new Date().toISOString();
 
-        const copy = [...current];
-        copy[idx] = updatedIncident;
-
-        setInfo("Work started on incident. Full details shown above.");
-        return copy;
-      },
-      () => {
-        const incident = incidents.find((i) => i.id === incidentId);
-        if (!incident) return {};
-        const locationDisplay =
-          incident.location ||
-          [
-            incident.hostel,
-            incident.room ? `Room ${incident.room}` : null,
-          ]
-            .filter(Boolean)
-            .join(" - ");
-        const base = `${incident.category} issue in ${locationDisplay}`;
-        return {
-          reporterEmail: incident.reporterEmail,
+      if (incident.reporterEmail) {
+        pushNotification({
+          id: Date.now() + 1,
+          targetRole: "reporter",
+          targetEmail: incident.reporterEmail,
           title: "Issue being worked on",
-          messageForReporter: `A technician has started working on your ${base}.`,
-          messageForAdmin: `Technician ${user?.name || ""} started ${base}.`,
-        };
+          message: `A technician has started working on your ${base}.`,
+          createdAt: notifNow,
+        });
       }
-    );
+
+      pushNotification({
+        id: Date.now() + 2,
+        targetRole: "admin",
+        targetEmail: null,
+        title: "Issue being worked on",
+        message: `Technician ${user?.name || ""} started ${base}.`,
+        createdAt: notifNow,
+      });
+    } catch (err) {
+      console.error("Failed to start work", err);
+      setError("Could not update status. Please try again.");
+    }
   };
 
-  const handleResolve = (incidentId) => {
-    const inc = incidents.find((i) => i.id === incidentId);
-    if (inc) {
-      setSelectedIncident(inc);
+  const handleResolve = async (incidentId) => {
+    setError("");
+    setInfo("");
+
+    const incident = incidents.find((i) => i.id === incidentId);
+    if (incident) {
+      setSelectedIncident(incident);
+    }
+    if (!incident) return;
+
+    if (incident.assignedTo !== technicianId) {
+      setError("You can only resolve incidents assigned to you.");
+      return;
     }
 
-    updateIncidents(
-      (current) => {
-        const idx = current.findIndex((i) => i.id === incidentId);
-        if (idx === -1) return current;
+    const nowIso = new Date().toISOString();
 
-        const incident = current[idx];
+    try {
+      await updateIncident(incident.firestoreId || incident.id, {
+        status: "Resolved",
+        resolvedAt: nowIso,
+      });
 
-        if (incident.assignedTo !== technicianId) {
-          setError("You can only resolve incidents assigned to you.");
-          return null;
-        }
+      setInfo("Incident resolved. Full details shown above.");
 
-        const updatedIncident = {
-          ...incident,
-          status: "Resolved",
-          resolvedAt: new Date().toISOString(),
-        };
+      const locationDisplay =
+        incident.location ||
+        [
+          incident.hostel,
+          incident.room ? `Room ${incident.room}` : null,
+        ]
+          .filter(Boolean)
+          .join(" - ");
+      const base = `${incident.category} issue in ${locationDisplay}`;
+      const notifNow = new Date().toISOString();
 
-        const copy = [...current];
-        copy[idx] = updatedIncident;
-
-        setInfo("Incident resolved. Full details shown above.");
-        return copy;
-      },
-      () => {
-        const incident = incidents.find((i) => i.id === incidentId);
-        if (!incident) return {};
-        const locationDisplay =
-          incident.location ||
-          [
-            incident.hostel,
-            incident.room ? `Room ${incident.room}` : null,
-          ]
-            .filter(Boolean)
-            .join(" - ");
-        const base = `${incident.category} issue in ${locationDisplay}`;
-        return {
-          reporterEmail: incident.reporterEmail,
+      if (incident.reporterEmail) {
+        pushNotification({
+          id: Date.now() + 1,
+          targetRole: "reporter",
+          targetEmail: incident.reporterEmail,
           title: "Issue resolved",
-          messageForReporter: `Your ${base} has been marked as resolved.`,
-          messageForAdmin: `Technician ${user?.name || ""} resolved ${base}.`,
-        };
+          message: `Your ${base} has been marked as resolved.`,
+          createdAt: notifNow,
+        });
       }
-    );
+
+      pushNotification({
+        id: Date.now() + 2,
+        targetRole: "admin",
+        targetEmail: null,
+        title: "Issue resolved",
+        message: `Technician ${user?.name || ""} resolved ${base}.`,
+        createdAt: notifNow,
+      });
+    } catch (err) {
+      console.error("Failed to resolve incident", err);
+      setError("Could not resolve this incident. Please try again.");
+    }
   };
 
-  const handleRelease = (incidentId) => {
-    const inc = incidents.find((i) => i.id === incidentId);
-    if (inc) {
-      setSelectedIncident(inc);
+  const handleRelease = async (incidentId) => {
+    setError("");
+    setInfo("");
+
+    const incident = incidents.find((i) => i.id === incidentId);
+    if (incident) {
+      setSelectedIncident(incident);
+    }
+    if (!incident) return;
+
+    if (incident.assignedTo !== technicianId) {
+      setError("You can only release incidents assigned to you.");
+      return;
     }
 
-    updateIncidents(
-      (current) => {
-        const idx = current.findIndex((i) => i.id === incidentId);
-        if (idx === -1) return current;
+    try {
+      await updateIncident(incident.firestoreId || incident.id, {
+        assignedTo: null,
+        assignedName: null,
+        assignedAt: null,
+        startedAt: null,
+        status: "New",
+      });
 
-        const incident = current[idx];
+      setInfo("Assignment released. Incident is back in the pool.");
 
-        if (incident.assignedTo !== technicianId) {
-          setError("You can only release incidents assigned to you.");
-          return null;
-        }
+      const locationDisplay =
+        incident.location ||
+        [
+          incident.hostel,
+          incident.room ? `Room ${incident.room}` : null,
+        ]
+          .filter(Boolean)
+          .join(" - ");
+      const base = `${incident.category} issue in ${locationDisplay}`;
+      const notifNow = new Date().toISOString();
 
-        const updatedIncident = {
-          ...incident,
-          assignedTo: null,
-          assignedName: null,
-          assignedAt: null,
-          startedAt: null,
-          status: "New",
-        };
-
-        const copy = [...current];
-        copy[idx] = updatedIncident;
-
-        setInfo("Assignment released. Incident is back in the pool.");
-        return copy;
-      },
-      () => {
-        const incident = incidents.find((i) => i.id === incidentId);
-        if (!incident) return {};
-        const locationDisplay =
-          incident.location ||
-          [
-            incident.hostel,
-            incident.room ? `Room ${incident.room}` : null,
-          ]
-            .filter(Boolean)
-            .join(" - ");
-        const base = `${incident.category} issue in ${locationDisplay}`;
-        return {
-          reporterEmail: incident.reporterEmail,
+      if (incident.reporterEmail) {
+        pushNotification({
+          id: Date.now() + 1,
+          targetRole: "reporter",
+          targetEmail: incident.reporterEmail,
           title: "Technician reassigned",
-          messageForReporter: `Your ${base} has been released and may be picked up by another technician.`,
-          messageForAdmin: `Incident ${base} was released by ${
-            user?.name || ""
-          } and is unassigned again.`,
-        };
+          message: `Your ${base} has been released and may be picked up by another technician.`,
+          createdAt: notifNow,
+        });
       }
-    );
+
+      pushNotification({
+        id: Date.now() + 2,
+        targetRole: "admin",
+        targetEmail: null,
+        title: "Technician reassigned",
+        message: `Incident ${base} was released by ${
+          user?.name || ""
+        } and is unassigned again.`,
+        createdAt: notifNow,
+      });
+    } catch (err) {
+      console.error("Failed to release incident", err);
+      setError("Could not release this incident. Please try again.");
+    }
   };
 
   const renderLocationDisplay = (i) => {
@@ -743,7 +729,9 @@ function DashboardTechnician() {
                       marginBottom: 8,
                     }}
                   >
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <div
+                      style={{ display: "flex", gap: 6, alignItems: "center" }}
+                    >
                       <span
                         style={{
                           fontSize: "0.75rem",

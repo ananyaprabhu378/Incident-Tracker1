@@ -1,15 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-
-const INCIDENT_STORAGE_KEY = "incidents_v1";
-
-function loadIncidents() {
-  try {
-    const raw = localStorage.getItem(INCIDENT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
+import { subscribeToIncidents } from "../services/incidentsApi"; // ✅ Firestore backend
 
 // logistic
 function sigmoid(x) {
@@ -19,8 +9,12 @@ function sigmoid(x) {
 function DashboardAdmin() {
   const [incidents, setIncidents] = useState([]);
 
+  // 🔄 Load incidents from Firestore instead of localStorage
   useEffect(() => {
-    setIncidents(loadIncidents());
+    const unsub = subscribeToIncidents((all) => {
+      setIncidents(all);
+    });
+    return () => unsub();
   }, []);
 
   const stats = useMemo(() => {
