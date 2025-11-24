@@ -2,7 +2,7 @@
   "name": "incident-tracker-ai",
   "version": "1.0.0",
   "private": true,
-  "homepage": "https://ananyaprabhu378.github.io/incident-tracker-ai",
+  "homepage": "https://ananyaprabhu378.github.io/incident-tracker1",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
