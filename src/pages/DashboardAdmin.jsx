@@ -1,5 +1,124 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchIncidents } from "../services/incidentsApi"; // ✅ Node backend
+// ❌ removed fetchIncidents import – we don't need backend here
+
+// ------------ DEMO INCIDENTS FOR JUDGES ------------
+function buildDemoIncidents() {
+  const now = Date.now();
+  const hoursAgo = (h) => new Date(now - h * 60 * 60 * 1000).toISOString();
+  const daysAgo = (d) => new Date(now - d * 24 * 60 * 60 * 1000).toISOString();
+
+  return [
+    {
+      id: "seed-1",
+      reporterEmail: "student1@campus.edu",
+      reporterName: "Ananya",
+      hostel: "Hostel A",
+      room: "203",
+      category: "Electricity",
+      priority: "High",
+      description: "Power socket sparking near study table.",
+      status: "New",
+      createdAt: hoursAgo(2),
+      updatedAt: hoursAgo(1.5),
+    },
+    {
+      id: "seed-2",
+      reporterEmail: "student2@campus.edu",
+      reporterName: "Rahul",
+      hostel: "Hostel A",
+      room: "203",
+      category: "Electricity",
+      priority: "High",
+      description: "Frequent voltage fluctuations in the same room.",
+      status: "Assigned",
+      technicianEmail: "tech1@campus.edu",
+      createdAt: hoursAgo(5),
+      updatedAt: hoursAgo(1),
+    },
+    {
+      id: "seed-3",
+      reporterEmail: "student3@campus.edu",
+      reporterName: "Priya",
+      hostel: "Hostel B",
+      room: "105",
+      category: "Water",
+      priority: "Medium",
+      description: "Continuous tap leakage in bathroom.",
+      status: "In Progress",
+      technicianEmail: "tech2@campus.edu",
+      createdAt: daysAgo(1),
+      updatedAt: hoursAgo(3),
+    },
+    {
+      id: "seed-4",
+      reporterEmail: "student4@campus.edu",
+      reporterName: "Arjun",
+      hostel: "Hostel C",
+      room: "310",
+      category: "Internet",
+      priority: "Low",
+      description: "Wi-Fi signal very weak in this room.",
+      status: "Resolved",
+      technicianEmail: "tech2@campus.edu",
+      createdAt: daysAgo(3),
+      updatedAt: daysAgo(2),
+    },
+    {
+      id: "seed-5",
+      reporterEmail: "student5@campus.edu",
+      reporterName: "Sneha",
+      hostel: "Hostel A",
+      room: "223",
+      category: "Cleanliness",
+      priority: "High",
+      description: "Wet floor near staircase, risk of slipping.",
+      status: "New",
+      createdAt: hoursAgo(10),
+      updatedAt: hoursAgo(10),
+    },
+    {
+      id: "seed-6",
+      reporterEmail: "student6@campus.edu",
+      reporterName: "Kiran",
+      hostel: "Hostel D",
+      room: "502",
+      category: "Others",
+      priority: "Medium",
+      description: "Lift making loud noise while moving.",
+      status: "Open",
+      createdAt: daysAgo(2),
+      updatedAt: daysAgo(2),
+    },
+    {
+      id: "seed-7",
+      reporterEmail: "student7@campus.edu",
+      reporterName: "Meera",
+      hostel: "Hostel B",
+      room: "121",
+      category: "Water",
+      priority: "Low",
+      description: "Low water pressure in taps.",
+      status: "Resolved",
+      technicianEmail: "tech3@campus.edu",
+      createdAt: daysAgo(4),
+      updatedAt: daysAgo(1),
+    },
+    {
+      id: "seed-8",
+      reporterEmail: "student8@campus.edu",
+      reporterName: "Vikram",
+      hostel: "Hostel C",
+      room: "418",
+      category: "Electricity",
+      priority: "High",
+      description: "Fan making burning smell when turned on.",
+      status: "In Progress",
+      technicianEmail: "tech1@campus.edu",
+      createdAt: hoursAgo(30),
+      updatedAt: hoursAgo(4),
+    },
+  ];
+}
 
 // logistic
 function sigmoid(x) {
@@ -10,15 +129,9 @@ function DashboardAdmin() {
   const [incidents, setIncidents] = useState([]);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const all = await fetchIncidents();
-        setIncidents(all || []);
-      } catch (err) {
-        console.error("Failed to fetch incidents", err);
-      }
-    }
-    load();
+    // ✅ Instead of calling backend, we inject demo incidents
+    const demo = buildDemoIncidents();
+    setIncidents(demo);
   }, []);
 
   const stats = useMemo(() => {
@@ -152,8 +265,9 @@ function DashboardAdmin() {
     riskPairs.sort((a, b) => b.probability - a.probability);
 
     const last7Days = [];
+    const nowTime = Date.now();
     for (let d = 6; d >= 0; d--) {
-      const dayStart = new Date(now - d * 24 * 60 * 60 * 1000);
+      const dayStart = new Date(nowTime - d * 24 * 60 * 60 * 1000);
       const key = dayStart.toISOString().slice(0, 10);
       const count = incidents.filter(
         (i) => i.createdAt && i.createdAt.slice(0, 10) === key
@@ -412,7 +526,7 @@ function DashboardAdmin() {
         </div>
       </div>
 
-      {/* AI risk predictions */}
+       {/* AI risk predictions */}
       <div
         style={{
           padding: "16px 18px",
