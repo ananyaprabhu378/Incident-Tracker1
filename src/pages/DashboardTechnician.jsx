@@ -41,7 +41,54 @@ function DashboardTechnician() {
   const loadIncidents = async () => {
     try {
       const data = await fetchIncidents();
-      setIncidents(data || []);
+
+// If no incidents found — seed demo incidents
+if (!data || data.length == 0) {
+  const demo = [
+    {
+      id: "demo-1",
+      title: "Water leakage in bathroom",
+      priority: "High",
+      category: "Plumbing",
+      description: "Severe leakage in 2nd-floor bathroom",
+      hostel: "Boys Hostel A",
+      room: "201",
+      status: "New",
+      assignedTo: null,
+      assignedName: null,
+      createdAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "demo-2",
+      title: "Fan not working",
+      priority: "Medium",
+      category: "Electrical",
+      description: "Ceiling fan not functioning",
+      hostel: "Girls Hostel C",
+      room: "312",
+      status: "In Progress",
+      assignedTo: technicianId,
+      assignedName: "Demo Technician",
+      createdAt: new Date(Date.now() - 80 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "demo-3",
+      title: "Broken chair",
+      priority: "Low",
+      category: "Furniture",
+      description: "Chair legs broken inside room",
+      hostel: "Boys Hostel B",
+      room: "118",
+      status: "New",
+      assignedTo: null,
+      createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    }
+  ];
+  setIncidents(demo);
+} else {
+  setIncidents(data);
+}
+
     } catch (err) {
       console.error("Failed to fetch incidents", err);
       setError("Could not load incidents from server.");
