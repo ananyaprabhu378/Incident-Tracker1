@@ -1,124 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-// ❌ removed fetchIncidents import – we don't need backend here
-
-// ------------ DEMO INCIDENTS FOR JUDGES ------------
-function buildDemoIncidents() {
-  const now = Date.now();
-  const hoursAgo = (h) => new Date(now - h * 60 * 60 * 1000).toISOString();
-  const daysAgo = (d) => new Date(now - d * 24 * 60 * 60 * 1000).toISOString();
-
-  return [
-    {
-      id: "seed-1",
-      reporterEmail: "student1@campus.edu",
-      reporterName: "Ananya",
-      hostel: "Hostel A",
-      room: "203",
-      category: "Electricity",
-      priority: "High",
-      description: "Power socket sparking near study table.",
-      status: "New",
-      createdAt: hoursAgo(2),
-      updatedAt: hoursAgo(1.5),
-    },
-    {
-      id: "seed-2",
-      reporterEmail: "student2@campus.edu",
-      reporterName: "Rahul",
-      hostel: "Hostel A",
-      room: "203",
-      category: "Electricity",
-      priority: "High",
-      description: "Frequent voltage fluctuations in the same room.",
-      status: "Assigned",
-      technicianEmail: "tech1@campus.edu",
-      createdAt: hoursAgo(5),
-      updatedAt: hoursAgo(1),
-    },
-    {
-      id: "seed-3",
-      reporterEmail: "student3@campus.edu",
-      reporterName: "Priya",
-      hostel: "Hostel B",
-      room: "105",
-      category: "Water",
-      priority: "Medium",
-      description: "Continuous tap leakage in bathroom.",
-      status: "In Progress",
-      technicianEmail: "tech2@campus.edu",
-      createdAt: daysAgo(1),
-      updatedAt: hoursAgo(3),
-    },
-    {
-      id: "seed-4",
-      reporterEmail: "student4@campus.edu",
-      reporterName: "Arjun",
-      hostel: "Hostel C",
-      room: "310",
-      category: "Internet",
-      priority: "Low",
-      description: "Wi-Fi signal very weak in this room.",
-      status: "Resolved",
-      technicianEmail: "tech2@campus.edu",
-      createdAt: daysAgo(3),
-      updatedAt: daysAgo(2),
-    },
-    {
-      id: "seed-5",
-      reporterEmail: "student5@campus.edu",
-      reporterName: "Sneha",
-      hostel: "Hostel A",
-      room: "223",
-      category: "Cleanliness",
-      priority: "High",
-      description: "Wet floor near staircase, risk of slipping.",
-      status: "New",
-      createdAt: hoursAgo(10),
-      updatedAt: hoursAgo(10),
-    },
-    {
-      id: "seed-6",
-      reporterEmail: "student6@campus.edu",
-      reporterName: "Kiran",
-      hostel: "Hostel D",
-      room: "502",
-      category: "Others",
-      priority: "Medium",
-      description: "Lift making loud noise while moving.",
-      status: "Open",
-      createdAt: daysAgo(2),
-      updatedAt: daysAgo(2),
-    },
-    {
-      id: "seed-7",
-      reporterEmail: "student7@campus.edu",
-      reporterName: "Meera",
-      hostel: "Hostel B",
-      room: "121",
-      category: "Water",
-      priority: "Low",
-      description: "Low water pressure in taps.",
-      status: "Resolved",
-      technicianEmail: "tech3@campus.edu",
-      createdAt: daysAgo(4),
-      updatedAt: daysAgo(1),
-    },
-    {
-      id: "seed-8",
-      reporterEmail: "student8@campus.edu",
-      reporterName: "Vikram",
-      hostel: "Hostel C",
-      room: "418",
-      category: "Electricity",
-      priority: "High",
-      description: "Fan making burning smell when turned on.",
-      status: "In Progress",
-      technicianEmail: "tech1@campus.edu",
-      createdAt: hoursAgo(30),
-      updatedAt: hoursAgo(4),
-    },
-  ];
-}
+import { fetchIncidents } from "../services/incidentsApi"; // ✅ use backend again
 
 // logistic
 function sigmoid(x) {
@@ -129,9 +10,31 @@ function DashboardAdmin() {
   const [incidents, setIncidents] = useState([]);
 
   useEffect(() => {
-    // ✅ Instead of calling backend, we inject demo incidents
-    const demo = buildDemoIncidents();
-    setIncidents(demo);
+    let isMounted = true;
+
+    async function loadIncidents() {
+      try {
+        const data = await fetchIncidents();
+
+        // Support both `{ incidents: [...] }` and `[...]`
+        const list = Array.isArray(data) ? data : data?.incidents || [];
+
+        if (isMounted) {
+          setIncidents(list);
+        }
+      } catch (err) {
+        console.error("Failed to fetch incidents for admin dashboard:", err);
+        if (isMounted) {
+          setIncidents([]);
+        }
+      }
+    }
+
+    loadIncidents();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const stats = useMemo(() => {
@@ -526,7 +429,7 @@ function DashboardAdmin() {
         </div>
       </div>
 
-       {/* AI risk predictions */}
+      {/* AI risk predictions */}
       <div
         style={{
           padding: "16px 18px",

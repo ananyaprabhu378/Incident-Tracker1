@@ -1,4 +1,4 @@
-// src/pages/DashboardTechnician.jsx
+// // src/pages/DashboardTechnician.jsx
 import { useEffect, useMemo, useState } from "react";
 import useAuth from "../hooks/useauth.jsx";
 import {
@@ -37,58 +37,12 @@ function DashboardTechnician() {
 
   const technicianId = user?.email || "tech";
 
-  // 🔄 Load incidents from Node backend (instead of Firestore subscribe)
+  // 🔄 Load incidents from Node backend (no local demo seeding now)
   const loadIncidents = async () => {
     try {
       const data = await fetchIncidents();
-
-// If no incidents found — seed demo incidents
-if (!data || data.length == 0) {
-  const demo = [
-    {
-      id: "demo-1",
-      title: "Water leakage in bathroom",
-      priority: "High",
-      category: "Plumbing",
-      description: "Severe leakage in 2nd-floor bathroom",
-      hostel: "Boys Hostel A",
-      room: "201",
-      status: "New",
-      assignedTo: null,
-      assignedName: null,
-      createdAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "demo-2",
-      title: "Fan not working",
-      priority: "Medium",
-      category: "Electrical",
-      description: "Ceiling fan not functioning",
-      hostel: "Girls Hostel C",
-      room: "312",
-      status: "In Progress",
-      assignedTo: technicianId,
-      assignedName: "Demo Technician",
-      createdAt: new Date(Date.now() - 80 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "demo-3",
-      title: "Broken chair",
-      priority: "Low",
-      category: "Furniture",
-      description: "Chair legs broken inside room",
-      hostel: "Boys Hostel B",
-      room: "118",
-      status: "New",
-      assignedTo: null,
-      createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    }
-  ];
-  setIncidents(demo);
-} else {
-  setIncidents(data);
-}
-
+      const list = Array.isArray(data) ? data : data?.incidents || [];
+      setIncidents(list);
     } catch (err) {
       console.error("Failed to fetch incidents", err);
       setError("Could not load incidents from server.");
@@ -147,6 +101,8 @@ if (!data || data.length == 0) {
         assignedTo: technicianId,
         assignedName: user?.name || "Technician",
         assignedAt: new Date().toISOString(),
+        // if backend uses something like "Open", normalize to "New"
+        status: incident.status || "New",
       });
       setInfo("Incident assigned to you.");
       await loadIncidents(); // refresh from backend
@@ -356,7 +312,7 @@ if (!data || data.length == 0) {
 
               return (
                 <div
-                  key={i.id} /* ✅ use backend id instead of _docId */
+                  key={i.id}
                   style={{
                     padding: "10px 12px",
                     borderRadius: 12,
@@ -365,14 +321,12 @@ if (!data || data.length == 0) {
                   }}
                 >
                   <div
-  style={{
-    display: "flex",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  }}
->
-
-                  
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 4,
+                    }}
+                  >
                     <div
                       style={{
                         fontSize: "0.95rem",
@@ -423,7 +377,7 @@ if (!data || data.length == 0) {
                         marginBottom: 4,
                       }}
                     >
-                      GPS:
+                      GPS:{" "}
                       <a
                         href={`https://www.google.com/maps?q=${i.latitude},${i.longitude}`}
                         target="_blank"
@@ -468,7 +422,7 @@ if (!data || data.length == 0) {
                           color: statusBadgeColor,
                         }}
                       >
-                        {i.status}
+                        {i.status || "New"}
                       </span>
                       {i.assignedTo && (
                         <span
@@ -550,43 +504,26 @@ if (!data || data.length == 0) {
                       </button>
                     )}
 
-                    {isMine && i.status === "New" && (
+                    {isMine && i.status !== "Resolved" && (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => handleStartWork(i)}
-                          style={{
-                            fontSize: "0.8rem",
-                            padding: "5px 10px",
-                            borderRadius: 999,
-                            border: "1px solid #f97316",
-                            background: "#fff7ed",
-                            color: "#c2410c",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Start work
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRelease(i)}
-                          style={{
-                            fontSize: "0.8rem",
-                            padding: "5px 10px",
-                            borderRadius: 999,
-                            border: "1px solid #d1d5db",
-                            background: "white",
-                            color: "#4b5563",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Release
-                        </button>
-                      </>
-                    )}
+                        {i.status !== "In Progress" && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartWork(i)}
+                            style={{
+                              fontSize: "0.8rem",
+                              padding: "5px 10px",
+                              borderRadius: 999,
+                              border: "1px solid #f97316",
+                              background: "#fff7ed",
+                              color: "#c2410c",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Start work
+                          </button>
+                        )}
 
-                    {isMine && i.status === "In Progress" && (
-                      <>
                         <button
                           type="button"
                           onClick={() => handleResolve(i)}
@@ -602,6 +539,7 @@ if (!data || data.length == 0) {
                         >
                           Resolve
                         </button>
+
                         <button
                           type="button"
                           onClick={() => handleRelease(i)}
